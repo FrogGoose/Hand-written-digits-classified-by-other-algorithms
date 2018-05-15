@@ -1,0 +1,172 @@
+---
+title: "Hand written digits"
+author: "MA"
+date: "May 14, 2018"
+output: github_document
+---
+
+We used deep learning to classify hand written digits and the accuracy reached up to 98%. In this project, we will use other methods to classify the hand written digits.
+
+Load the hand written digits data.
+```{r, echo=TRUE, warning=FALSE}
+library(keras)
+mnist <- dataset_mnist()
+x_train <- mnist$train$x
+y_train <- mnist$train$y
+x_test <- mnist$test$x
+y_test <- mnist$test$y
+dim(x_train) <- c(nrow(x_train), 784)
+dim(x_test) <- c(nrow(x_test), 784)
+x_train <- x_train / 255
+x_test <- x_test / 255
+```
+
+Note, the training data set 'x_train' has 60,000 rows and 784 columns. Each row stands for a hand written digit and 'y_train' are the corresponding 60,000 labels.  
+
+##K Mean Method
+
+Since this is a labeled data set, so we will use the mean of all images that have the same lable as the correct center for each digit. Given a new image, we will compute the distance between the new image and each center, then choose the one with smallest distance as the final correct classification for this new image. 
+
+
+```{r, echo=TRUE, warning=FALSE}
+#extract all training data with the same label
+A0<-x_train[which(y_train==0),]
+A1<-x_train[which(y_train==1),]
+A2<-x_train[which(y_train==2),]
+A3<-x_train[which(y_train==3),]
+A4<-x_train[which(y_train==4),]
+A5<-x_train[which(y_train==5),]
+A6<-x_train[which(y_train==6),]
+A7<-x_train[which(y_train==7),]
+A8<-x_train[which(y_train==8),]
+A9<-x_train[which(y_train==9),]
+list.ma<-list(A0,A1,A2,A3,A4,A5,A6,A7,A8,A9)
+```
+
+Compute the "Centers"
+
+```{r,echo=TRUE, warning=FALSE}
+#compute the "centers"
+mean.ma<-matrix(nrow=10,nc=784)
+for(i in 1:10){
+  mean.ma[i,]<-colMeans(list.ma[[i]])
+}
+```
+
+
+Computer the distance between a given digit and each center.
+
+```{r,echo=TRUE, warning=FALSE}
+label.fun<-function(x,startpoint){#x is a vector with size 784, standing for a new image. And startpoint is a 10 by 784 matrix, standing for the 10 centers. 
+  my.distance<-dist(rbind(x,startpoint))[1:10]#compute distance between x and each row of starpoint
+  return(which.min(my.distance)-1)#return the lable for this new image
+}
+```
+
+Classify new images based on the distance.
+```{r,echo=TRUE,warning=FALSE}
+predict.ma<-apply(x_test,1,FUN=label.fun,startpoint=mean.ma)
+```
+
+Evaluate the K-Mean classification. 
+
+```{r,echo=TRUE, warning=FALSE}
+library(caret)
+confusionMatrix(predict.ma,y_test)
+```
+
+We can see the overall accuracy is only 82.3%. 
+
+
+
+
+##K Nearest Neighbor(KNN).
+KNN classifies an object by a majority vote of its k neighbors. It is easy to implememt and naturally handle multi-class cases. But it suffers expensive computing to find k nearest neighbors when the training set is large. 
+
+Especially for this data set, we have 60,000 traing points and 10,000 test points. That is, given a test point, we need to compute the distance between the test point and all 60,000 traing points. And we have to repeat this process 10,000 times in total since there are 10,000 test points.
+
+In general, we might use 'apply' function or a 'for loop' to compute the distance between a new test point and all the 60,000 training points, like below.
+
+```{r,echo=TRUE, warning=FALSE}
+#my.distance<-apply(x_train,1,FUN=function(a) dist(rbind(x_test[i,],a)))
+```
+
+There is no problem with this computing, but it takes a long time (about 32 hours) to finish 10,000 repetitions. 
+
+In order to be faster, we will vectorize the distance computing funstion instead of using a 'for loop' or 'apply function'. It is better to have a 8GB RAM to use the following vectorized distance computing fuction.
+
+```{r,echo=TRUE, warning=FALSE}
+x_train_ma<-t(x_train)
+dim(x_train_ma)<-c(1,60000*784)#convert training data to a vector with size 47,040,000
+####faster distance computing function#####################
+dist.function<-function(aa){#'aa' is a vector with size 784, standing for a test point
+  dist.data<-rep(aa,60000)
+  dist.A<-matrix((dist.data-x_train_ma)^2,nr=784,nc=60000)
+  dist.B<-sqrt(colSums(dist.A))
+  return(dist.B)
+}
+```
+
+KNN Algorithm
+
+```{r,echo=TRUE,warning=FALSE}
+k<-250 #sqrt of number of data points in training set
+predict.ma<-vector(length=10000)
+for(i in 1:10000){
+  my.distance<-dist.function(x_test[i,])
+  labels.ma<-rbind(y_train,my.distance)#put the distance and labels together
+  labels.ma2<-labels.ma[,order(labels.ma[2,])]#sort from lowest distance to largest distance
+  predict.ma[i]<-names(sort(table(labels.ma2[1,1:k]),decreasing=T)[1])#get the vote from the majority
+}
+```
+
+Evaluate the performance of KNN
+
+```{r,echo=TRUE, warning=FALSE}
+library(caret)
+confusionMatrix(predict.ma,y_test)
+```
+
+We can see that the overall accuracy of classification is 92.3%.
+
+We also used KNN function from class pakage to classify the digits and it took more than 6 hours. We did not use the system.time function to measure the time cost, just simply displayed the start time and end time. 
+
+```{r,echo=TRUE,warning=FALSE}
+#library(class)
+#date()
+#predictpack<-knn(x_train, x_test, y_train, k = 250, prob=TRUE)
+#date()
+```
+
+date()  
+
+[1] "Sat May 12 08:13:20 2018"  
+
+predictpack<-knn(x_train, x_test, y_train, k = 250, prob=TRUE)  
+
+date()  
+
+[1] "Sat May 12 14:29:31 2018"  
+
+**Similarly, our own computing function took less than 4 hours, which is much faster than the KNN package.**
+
+date()  
+
+[1] "Mon May 14 15:50:30 2018"
+
+for(i in 1:10000){  
+
+my.distance<-dist.function(x_test[i,])  
+
+labels.ma<-rbind(y_train,my.distance)#put the distance and labels together  
+
+lab .... [TRUNCATED]  
+
+
+date()  
+
+[1] "Mon May 14 19:35:27 2018"
+
+Based on our own distance computing function, we also could use parallel computing like 'ParApply' to classify test data points more quickly, but it requires much more RAM, maybe 100 GB at least. 
+
+In comparison, deep learning is much better than K mean and KNN.
